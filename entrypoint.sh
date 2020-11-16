@@ -30,7 +30,7 @@ if [[ $NETWORK = "testnet" ]] ; then
 else
   ln -sf $CNODE_HOME/files/mainnet-byron-genesis.json $CNODE_HOME/files/byron-genesis.json
   ln -sf $CNODE_HOME/files/mainnet-shelley-genesis.json $CNODE_HOME/files/genesis.json
-  ln -sf $CNODE_HOME/files/testnet-config.json $CNODE_HOME/files/config.json
+  ln -sf $CNODE_HOME/files/mainnet-config.json $CNODE_HOME/files/config.json
 fi
 
 
