@@ -26,11 +26,11 @@ cardano-node --version;
 if [[ $NETWORK = "testnet" ]] ; then
   ln -sf $CNODE_HOME/files/testnet-byron-genesis.json $CNODE_HOME/files/byron-genesis.json
   ln -sf $CNODE_HOME/files/testnet-shelley-genesis.json $CNODE_HOME/files/genesis.json
-  ln -sf $CNODE_HOME/files/testnet-config.json $CNODE_HOME/files/config.json
+  jq '.hasEKG = ["0.0.0.0", 12788] | .hasPrometheus = ["0.0.0.0", 12789]' $CNODE_HOME/files/testnet-config.json > $CNODE_HOME/files/config.json
 else
   ln -sf $CNODE_HOME/files/mainnet-byron-genesis.json $CNODE_HOME/files/byron-genesis.json
   ln -sf $CNODE_HOME/files/mainnet-shelley-genesis.json $CNODE_HOME/files/genesis.json
-  ln -sf $CNODE_HOME/files/mainnet-config.json $CNODE_HOME/files/config.json
+  jq '.hasEKG = ["0.0.0.0", 12788] | .hasPrometheus = ["0.0.0.0", 12789]' $CNODE_HOME/files/mainnet-config.json > $CNODE_HOME/files/config.json
 fi
 
 
