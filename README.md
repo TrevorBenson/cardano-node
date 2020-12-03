@@ -1,2 +1,2 @@
 # cardano-node
-Debian Version
+CentOS Version
