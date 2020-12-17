@@ -22,10 +22,14 @@ elif [[ $NETWORK = "mainnet" ]] ; then
   ln -sf $CNODE_HOME/files/mainnet-byron-genesis.json $CNODE_HOME/files/byron-genesis.json
   ln -sf $CNODE_HOME/files/mainnet-shelley-genesis.json $CNODE_HOME/files/genesis.json
   jq '.hasEKG = ["0.0.0.0", 12788] | .hasPrometheus = ["0.0.0.0", 12798]' $CNODE_HOME/files/config-mainnet.json > $CNODE_HOME/files/config.json
-elif [[ $NETWORK = "launchpad" ]] ; then
+elif [[ $NETWORK = "allegra" ]] ; then
   ln -sf $CNODE_HOME/files/allegra-byron-genesis.json $CNODE_HOME/files/byron-genesis.json
   ln -sf $CNODE_HOME/files/allegra-shelley-genesis.json $CNODE_HOME/files/genesis.json
   jq '.hasEKG = ["0.0.0.0", 12788] | .hasPrometheus = ["0.0.0.0", 12798]' $CNODE_HOME/files/config-allegra.json > $CNODE_HOME/files/config.json
+elif [[ $NETWORK = "launchpad" ]] ; then
+  ln -sf $CNODE_HOME/files/launchpad-byron-genesis.json $CNODE_HOME/files/byron-genesis.json
+  ln -sf $CNODE_HOME/files/launchpad-shelley-genesis.json $CNODE_HOME/files/genesis.json
+  jq '.hasEKG = ["0.0.0.0", 12788] | .hasPrometheus = ["0.0.0.0", 12798]' $CNODE_HOME/files/config-launchpad.json > $CNODE_HOME/files/config.json
 fi
 
 if ! [[ -z $NETWORK ]] ; then 
