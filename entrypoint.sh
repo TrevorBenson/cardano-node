@@ -35,7 +35,7 @@ fi
 if ! [[ -z $NETWORK ]] ; then 
   $CNODE_HOME/scripts/cnode.sh
 else
-  echo "Please set a NETWORK environment variable to one of: mainnet/testnet/launchpad"
+  echo "Please set a NETWORK environment variable to one of: mainnet/testnet/allegra|launchpad"
   echo "To modify topology.json map a container volume of this file to $CNODE_HOME/files/topology.json for a read/write -v /my/files/topology.json:$CNODE_HOME/files/topology.json:rw otherwise set rw to ro if you want it read only inside the container."
   echo "To enable a POOL pass in POOL_NAME environment variable"
 fi
