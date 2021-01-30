@@ -16,13 +16,13 @@ cardano-node --version;
 
 if ! [[ -z "${NETWORK}" ]] ; then 
   if [[ "${NETWORK}" = "testnet" ]] ; then
-    ln -sf $CNODE_HOME/files/testnet-byron-genesis.json $CNODE_HOME/files/byron-genesis.json
-    ln -sf $CNODE_HOME/files/testnet-shelley-genesis.json $CNODE_HOME/files/genesis.json
+    ln -sf $CNODE_HOME/files/${NETWORK}-byron-genesis.json $CNODE_HOME/files/byron-genesis.json
+    ln -sf $CNODE_HOME/files/${NETWORK}-shelley-genesis.json $CNODE_HOME/files/genesis.json
     jq '.hasEKG = ["0.0.0.0", 12788] | .hasPrometheus = ["0.0.0.0", 12798]' $CNODE_HOME/files/config-combinator.json > $CNODE_HOME/files/config.json
   else
-    ln -sf $CNODE_HOME/files/"${NETWORK}"-byron-genesis.json $CNODE_HOME/files/byron-genesis.json
-    ln -sf $CNODE_HOME/files/"${NETWORK}"-shelley-genesis.json $CNODE_HOME/files/genesis.json
-    jq '.hasEKG = ["0.0.0.0", 12788] | .hasPrometheus = ["0.0.0.0", 12798]' $CNODE_HOME/files/config-"${NETWORK}".json > $CNODE_HOME/files/config.json
+    ln -sf $CNODE_HOME/files/${NETWORK}-byron-genesis.json $CNODE_HOME/files/byron-genesis.json
+    ln -sf $CNODE_HOME/files/${NETWORK}-shelley-genesis.json $CNODE_HOME/files/genesis.json
+    jq '.hasEKG = ["0.0.0.0", 12788] | .hasPrometheus = ["0.0.0.0", 12798]' $CNODE_HOME/files/config-${NETWORK}.json > $CNODE_HOME/files/config.json
   fi
   $CNODE_HOME/scripts/cnode.sh
 else
