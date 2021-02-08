@@ -1,6 +1,7 @@
 #!/bin/bash
 
 . ~/.bashrc
+. /opt/cardano/cnode/scripts/env
 
 if [ -n "$@" ]; then
   ARGS=("$@")
