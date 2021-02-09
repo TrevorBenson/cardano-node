@@ -13,7 +13,7 @@ echo "CNCLI ARGS: ${ARGS[@]}";
 [[ -z "${CNODE_PORT}" ]] && export CNODE_PORT=6000
 
 echo "NODE: $HOSTNAME";
-cncli version;
+cncli --version;
 
 if ! [[ -z "${NETWORK}" ]] ; then 
   ln -sf ${CNODE_HOME}/files/${NETWORK}-byron-genesis.json ${CNODE_HOME}/files/byron-genesis.json
