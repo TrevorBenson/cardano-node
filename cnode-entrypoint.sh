@@ -18,7 +18,7 @@ cardano-node --version;
 if ! [[ -z "${NETWORK}" ]] ; then 
   ln -sf ${CNODE_HOME}/files/${NETWORK}-byron-genesis.json ${CNODE_HOME}/files/byron-genesis.json
   ln -sf ${CNODE_HOME}/files/${NETWORK}-shelley-genesis.json ${CNODE_HOME}/files/genesis.json
-  jq '.hasEKG = ["0.0.0.0", 12788] | .hasPrometheus = ["0.0.0.0", 12798]' ${CNODE_HOME}/files/config-${NETWORK}.json > ${CNODE_HOME}/files/config.json
+  jq '.hasEKG = ["0.0.0.0", 12788] | .hasPrometheus = ["0.0.0.0", 12798] | .TraceMempool = fase' ${CNODE_HOME}/files/config-${NETWORK}.json > ${CNODE_HOME}/files/config.json
   ${CNODE_HOME}/scripts/cnode.sh
 else
   echo "Please set a NETWORK environment variable to one of: [mainnet|testnet|staging|launchpad]"
