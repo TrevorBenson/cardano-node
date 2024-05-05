@@ -1,0 +1,22 @@
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # every 6 hours
+  workflow_dispatch: # on button click
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        branch:
+          - master
+          - nightly
+    steps:
+      - name: Fork Sync
+        uses: tgymnich/fork-sync@v1.9.0
+        with:
+          owner: intersectMBO
+          base: ${{ matrix.branch }}
+          head: ${{ matrix.branch }}
