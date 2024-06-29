@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -10,7 +9,6 @@ module Cardano.Testnet.Test.Gov.NoConfidence
   ) where
 
 import           Cardano.Api as Api
-import           Cardano.Api.Error
 import           Cardano.Api.Ledger
 import           Cardano.Api.Shelley
 
@@ -29,14 +27,14 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe.Strict
 import           Data.String
 import qualified Data.Text as Text
-import           GHC.Stack
+import           GHC.Exts (IsList (toList))
 import           Lens.Micro
 import           System.FilePath ((</>))
 
 import           Testnet.Components.Configuration
 import           Testnet.Components.Query
-import           Testnet.Components.TestWatchdog
 import           Testnet.Defaults
+import           Testnet.EpochStateProcessing (waitForGovActionVotes)
 import qualified Testnet.Process.Cli.DRep as DRep
 import           Testnet.Process.Cli.Keys
 import qualified Testnet.Process.Cli.SPO as SPO
@@ -55,7 +53,7 @@ import qualified Hedgehog.Extras.Stock.IO.Network.Sprocket as IO
 -- Generate a testnet with a committee defined in the Conway genesis. Submit a motion of no confidence
 -- and have the required threshold of SPOs and DReps vote yes on it.
 hprop_gov_no_confidence :: Property
-hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePath' -> runWithDefaultWatchdog_ $ do
+hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePath' -> H.runWithDefaultWatchdog_ $ do
 
   conf@Conf { tempAbsPath } <- mkConf tempAbsBasePath'
   let tempAbsPath' = unTmpAbsPath tempAbsPath
@@ -69,7 +67,7 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
       era = toCardanoEra sbe
       cEra = AnyCardanoEra era
       fastTestnetOptions = cardanoDefaultTestnetOptions
-        { cardanoEpochLength = 100
+        { cardanoEpochLength = 200
         , cardanoNodeEra = cEra
         }
   execConfigOffline <- H.mkExecConfigOffline tempBaseAbsPath
@@ -132,9 +130,10 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
   H.note_ $ "Abs path: " <> tempAbsBasePath'
   H.note_ $ "Socketpath: " <> socketPath
 
-  mCommitteePresent
-    <- H.leftFailM $ findCondition (committeeIsPresent True) configurationFile (File socketPath) (EpochNo 3)
-  H.nothingFail mCommitteePresent
+  epochStateView <- getEpochStateView configurationFile (File socketPath)
+
+  H.nothingFailM $ watchEpochStateUpdate epochStateView (EpochInterval 3) $ \anyNewEpochState->
+    pure $ committeeIsPresent True anyNewEpochState
 
   -- Step 2. Propose motion of no confidence. DRep and SPO voting thresholds must be met.
 
@@ -156,10 +155,9 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
   cliStakeAddressKeyGen
     $ KeyPair (File stakeVkeyFp) (File stakeSKeyFp)
 
-  epochStateView <- getEpochStateView configurationFile (File socketPath)
   minActDeposit <- getMinGovActionDeposit epochStateView ceo
 
-  void $ H.execCli' execConfig $
+  void $ H.execCli' execConfig
     [ eraToString era, "governance", "action", "create-no-confidence"
     , "--testnet"
     , "--governance-action-deposit", show @Integer minActDeposit
@@ -193,23 +191,14 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
 
   governanceActionTxId <- retrieveTransactionId execConfig signedProposalTx
 
-  !propSubmittedResult <- findCondition (maybeExtractGovernanceActionIndex (fromString governanceActionTxId))
-                                        configurationFile
-                                        (File socketPath)
-                                        (EpochNo 10)
-
-  governanceActionIndex <- case propSubmittedResult of
-                             Left e ->
-                               H.failMessage callStack
-                                 $ "findCondition failed with: " <> displayError e
-                             Right Nothing ->
-                               H.failMessage callStack "Couldn't find proposal."
-                             Right (Just a) -> return a
+  governanceActionIndex <-
+    H.nothingFailM $ watchEpochStateUpdate epochStateView (EpochInterval 10) $ \(anyNewEpochState, _, _) ->
+      pure $ maybeExtractGovernanceActionIndex (fromString governanceActionTxId) anyNewEpochState
 
   let spoVotes :: [(String, Int)]
-      spoVotes =  [("yes", 1), ("yes", 2), ("yes", 3)]
+      spoVotes =  [("yes", 1), ("yes", 2), ("no", 3)]
       drepVotes :: [(String, Int)]
-      drepVotes = [("yes", 1), ("yes", 2), ("yes", 3)]
+      drepVotes = [("yes", 1), ("yes", 2), ("no", 3)]
 
   spoVoteFiles <- SPO.generateVoteFiles ceo execConfig work "spo-vote-files"
                    governanceActionTxId governanceActionIndex
@@ -233,16 +222,30 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
 
   submitTx execConfig cEra voteTxFp
 
+  -- Tally votes
+  waitForGovActionVotes epochStateView (EpochInterval 1)
+
+  govState <- getGovState epochStateView ceo
+  govActionState <- H.headM $ govState ^. L.cgsProposalsL . L.pPropsL . to toList
+  let gaDRepVotes = govActionState ^. L.gasDRepVotesL . to toList
+      gaSpoVotes = govActionState ^. L.gasStakePoolVotesL . to toList
+
+  length (filter ((== L.VoteYes) . snd) gaDRepVotes) === 2
+  length (filter ((== L.VoteNo) . snd) gaDRepVotes) === 1
+  length (filter ((== L.Abstain) . snd) gaDRepVotes) === 0
+  length drepVotes === length gaDRepVotes
+  length (filter ((== L.VoteYes) . snd) gaSpoVotes) === 2
+  length (filter ((== L.VoteNo) . snd) gaSpoVotes) === 1
+  length (filter ((== L.Abstain) . snd) gaSpoVotes) === 0
+  length spoVotes === length gaSpoVotes
+
   -- Step 4. We confirm the no confidence motion has been ratified by checking
   -- for an empty constitutional committee.
-
-  mCommitteeEmpty
-    <- H.leftFailM $ findCondition (committeeIsPresent False) configurationFile (File socketPath) (EpochNo 5)
-  H.nothingFail mCommitteeEmpty
+  H.nothingFailM $ watchEpochStateUpdate epochStateView (EpochInterval 10) (return . committeeIsPresent False)
 
 -- | Checks if the committee is empty or not.
-committeeIsPresent :: Bool -> AnyNewEpochState -> Maybe ()
-committeeIsPresent committeeExists (AnyNewEpochState sbe newEpochState) =
+committeeIsPresent :: Bool -> (AnyNewEpochState, SlotNo, BlockNo) -> Maybe ()
+committeeIsPresent committeeExists (AnyNewEpochState sbe newEpochState, _, _) =
   caseShelleyToBabbageOrConwayEraOnwards
     (const $ error "Constitutional committee does not exist pre-Conway era")
     (const $ let mCommittee = newEpochState

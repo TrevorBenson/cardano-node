@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -8,16 +9,12 @@ module Testnet.Property.Util
   , integrationRetryWorkspace
   , integrationWorkspace
   , isLinux
-  , runInBackground
 
   , decodeEraUTxO
   ) where
 
 import           Cardano.Api
 
-import           Control.Exception.Safe (MonadCatch)
-import           Control.Monad
-import           Control.Monad.Trans.Resource
 import qualified Data.Aeson as Aeson
 import           GHC.Stack
 import qualified System.Environment as IO
@@ -60,18 +57,6 @@ integrationWorkspace workspaceName f = withFrozenCallStack $
 isLinux :: Bool
 isLinux = os == "linux"
 
-
--- | Runs an action in background, and registers cleanup to `MonadResource m`
--- The argument forces IO monad to prevent leaking of `MonadResource` to the child thread
-runInBackground :: MonadTest m
-                => MonadResource m
-                => MonadCatch m
-                => IO a
-                -> m ()
-runInBackground act = void . H.evalM $ allocate (H.async act) cleanUp
-  where
-    cleanUp :: H.Async a -> IO ()
-    cleanUp a = H.cancel a >> void (H.link a)
-
 decodeEraUTxO :: (IsShelleyBasedEra era, MonadTest m) => ShelleyBasedEra era -> Aeson.Value -> m (UTxO era)
 decodeEraUTxO _ = H.jsonErrorFail . Aeson.fromJSON
+

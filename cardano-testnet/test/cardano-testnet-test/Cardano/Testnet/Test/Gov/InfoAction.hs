@@ -13,6 +13,7 @@ module Cardano.Testnet.Test.Gov.InfoAction
 
 import           Cardano.Api as Api
 import           Cardano.Api.Error (displayError)
+import           Cardano.Api.Ledger (EpochInterval (EpochInterval))
 import           Cardano.Api.Shelley
 
 import           Cardano.Ledger.Conway.Governance (RatifyState (..))
@@ -32,7 +33,6 @@ import           GHC.Stack
 import           System.FilePath ((</>))
 
 import           Testnet.Components.Query
-import           Testnet.Components.TestWatchdog
 import           Testnet.Defaults
 import           Testnet.Process.Cli.Keys
 import           Testnet.Process.Run (execCli', mkExecConfig)
@@ -45,7 +45,7 @@ import qualified Hedgehog.Extras as H
 -- | Execute me with:
 -- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/InfoAction/'@
 hprop_ledger_events_info_action :: Property
-hprop_ledger_events_info_action = integrationRetryWorkspace 0 "info-hash" $ \tempAbsBasePath' -> runWithDefaultWatchdog_ $ do
+hprop_ledger_events_info_action = integrationRetryWorkspace 0 "info-hash" $ \tempAbsBasePath' -> H.runWithDefaultWatchdog_ $ do
 
 
   conf@Conf { tempAbsPath } <- H.noteShowM $ mkConf tempAbsBasePath'
@@ -58,7 +58,7 @@ hprop_ledger_events_info_action = integrationRetryWorkspace 0 "info-hash" $ \tem
       era = toCardanoEra sbe
       sbe = conwayEraOnwardsToShelleyBasedEra ceo
       fastTestnetOptions = cardanoDefaultTestnetOptions
-        { cardanoEpochLength = 100
+        { cardanoEpochLength = 200
         , cardanoNodeEra = AnyCardanoEra era
         }
 
@@ -144,18 +144,9 @@ hprop_ledger_events_info_action = integrationRetryWorkspace 0 "info-hash" $ \tem
     , "--tx-file", txbodySignedFp
     ]
 
-  !propSubmittedResult <- findCondition (maybeExtractGovernanceActionIndex (fromString txidString))
-                                        configurationFile
-                                        socketPath
-                                        (EpochNo 10)
-
-  governanceActionIndex <- case propSubmittedResult of
-                             Left e ->
-                               H.failMessage callStack
-                                 $ "findCondition failed with: " <> displayError e
-                             Right Nothing ->
-                               H.failMessage callStack "Couldn't find proposal."
-                             Right (Just a) -> return a
+  governanceActionIndex <-
+    H.nothingFailM $ watchEpochStateUpdate epochStateView (EpochInterval 1) $ \(anyNewEpochState, _, _) ->
+      pure $ maybeExtractGovernanceActionIndex (fromString txidString) anyNewEpochState
 
   let voteFp :: Int -> FilePath
       voteFp n = work </> gov </> "vote-" <> show n
@@ -166,7 +157,7 @@ hprop_ledger_events_info_action = integrationRetryWorkspace 0 "info-hash" $ \tem
       [ "conway", "governance", "vote", "create"
       , "--yes"
       , "--governance-action-tx-id", txidString
-      , "--governance-action-index", show @Word32 governanceActionIndex
+      , "--governance-action-index", show @Word16 governanceActionIndex
       , "--drep-verification-key-file", verificationKeyFp $ defaultDRepKeyPair n
       , "--out-file", voteFp n
       ]
@@ -229,7 +220,7 @@ data InfoActionState = InfoActionState
 
 foldBlocksCheckInfoAction
   :: FilePath -- ^ Where to store debug logs
-  -> Word32 -- ^ gov action index
+  -> Word16 -- ^ gov action index
   -> Env
   -> LedgerState
   -> [LedgerEvent]

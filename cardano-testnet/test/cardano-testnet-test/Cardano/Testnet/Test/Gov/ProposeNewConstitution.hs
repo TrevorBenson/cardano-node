@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -10,7 +9,6 @@ module Cardano.Testnet.Test.Gov.ProposeNewConstitution
   ) where
 
 import           Cardano.Api as Api
-import           Cardano.Api.Error (displayError)
 import           Cardano.Api.Ledger (EpochInterval (..))
 
 import qualified Cardano.Crypto.Hash as L
@@ -29,14 +27,13 @@ import           Data.Maybe.Strict
 import           Data.String
 import qualified Data.Text as Text
 import           GHC.Exts (IsList (..))
-import           GHC.Stack (callStack)
 import           Lens.Micro
 import           System.FilePath ((</>))
 
 import           Testnet.Components.Configuration
 import           Testnet.Components.Query
-import           Testnet.Components.TestWatchdog
 import           Testnet.Defaults
+import           Testnet.EpochStateProcessing (waitForGovActionVotes)
 import           Testnet.Process.Cli.DRep
 import           Testnet.Process.Cli.Keys
 import           Testnet.Process.Cli.Transaction
@@ -50,7 +47,7 @@ import qualified Hedgehog.Extras as H
 -- | Execute me with:
 -- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/ProposeAndRatifyNewConstitution/"'@
 hprop_ledger_events_propose_new_constitution :: Property
-hprop_ledger_events_propose_new_constitution = integrationWorkspace "propose-new-constitution" $ \tempAbsBasePath' -> runWithDefaultWatchdog_ $ do
+hprop_ledger_events_propose_new_constitution = integrationWorkspace "propose-new-constitution" $ \tempAbsBasePath' -> H.runWithDefaultWatchdog_ $ do
   -- Start a local test net
   conf@Conf { tempAbsPath } <- mkConf tempAbsBasePath'
   let tempAbsPath' = unTmpAbsPath tempAbsPath
@@ -72,7 +69,7 @@ hprop_ledger_events_propose_new_constitution = integrationWorkspace "propose-new
       era = toCardanoEra sbe
       cEra = AnyCardanoEra era
       fastTestnetOptions = cardanoDefaultTestnetOptions
-        { cardanoEpochLength = 100
+        { cardanoEpochLength = 200
         , cardanoNodeEra = cEra
         , cardanoNumDReps = numVotes
         }
@@ -125,7 +122,7 @@ hprop_ledger_events_propose_new_constitution = integrationWorkspace "propose-new
 
   -- Create constitution proposal
   guardRailScriptFp <- H.note $ work </> "guard-rail-script.plutusV3"
-  H.writeFile guardRailScriptFp $ Text.unpack plutusV3NonSpendingScript
+  H.writeFile guardRailScriptFp $ Text.unpack plutusV3Script
   -- TODO: Update help text for policyid. The script hash is not
   -- only useful for minting scripts
   constitutionScriptHash <- filter (/= '\n') <$>
@@ -169,18 +166,9 @@ hprop_ledger_events_propose_new_constitution = integrationWorkspace "propose-new
 
   governanceActionTxId <- retrieveTransactionId execConfig signedProposalTx
 
-  !propSubmittedResult <- findCondition (maybeExtractGovernanceActionIndex (fromString governanceActionTxId))
-                                        configurationFile
-                                        socketPath
-                                        (EpochNo 10)
-
-  governanceActionIndex <- case propSubmittedResult of
-                             Left e ->
-                               H.failMessage callStack
-                                $ "findCondition failed with: " <> displayError e
-                             Right Nothing ->
-                               H.failMessage callStack "Couldn't find proposal."
-                             Right (Just a) -> return a
+  governanceActionIndex <-
+    H.nothingFailM . watchEpochStateUpdate epochStateView (EpochInterval 1) $ \(anyNewEpochState, _, _) ->
+    pure $ maybeExtractGovernanceActionIndex (fromString governanceActionTxId) anyNewEpochState
 
   -- Proposal was successfully submitted, now we vote on the proposal and confirm it was ratified
   voteFiles <- generateVoteFiles execConfig work "vote-files"
@@ -196,7 +184,7 @@ hprop_ledger_events_propose_new_constitution = integrationWorkspace "propose-new
 
   submitTx execConfig cEra voteTxFp
 
-  _ <- waitForEpochs epochStateView (EpochInterval 1)
+  waitForGovActionVotes epochStateView (EpochInterval 1)
 
   -- Count votes before checking for ratification. It may happen that the proposal gets removed after
   -- ratification because of a long waiting time, so we won't be able to access votes.
@@ -223,7 +211,7 @@ foldBlocksCheckConstitutionWasRatified
   :: String -- submitted constitution hash
   -> String -- submitted guard rail script hash
   -> AnyNewEpochState
-  -> StateT s IO LedgerStateCondition -- ^ Accumulator at block i and fold status
+  -> StateT s IO ConditionResult -- ^ Accumulator at block i and fold status
 foldBlocksCheckConstitutionWasRatified submittedConstitutionHash submittedGuardRailScriptHash anyNewEpochState =
   if filterRatificationState submittedConstitutionHash submittedGuardRailScriptHash anyNewEpochState
   then return ConditionMet

@@ -21,7 +21,6 @@ import           Lens.Micro ((^.))
 import qualified System.Directory as IO
 import           System.FilePath ((</>))
 
-import           Testnet.Components.TestWatchdog
 import           Testnet.Property.Util (integrationRetryWorkspace)
 import           Testnet.Types
 
@@ -32,7 +31,7 @@ import qualified Hedgehog.Extras.Test as H
 -- | Execute me with:
 -- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/Treasury Growth/"'@
 prop_check_if_treasury_is_growing :: H.Property
-prop_check_if_treasury_is_growing = integrationRetryWorkspace 0 "growing-treasury" $ \tempAbsBasePath' -> runWithDefaultWatchdog_ $ do
+prop_check_if_treasury_is_growing = integrationRetryWorkspace 0 "growing-treasury" $ \tempAbsBasePath' -> H.runWithDefaultWatchdog_ $ do
   -- Start testnet
   conf@Conf{tempAbsPath=TmpAbsolutePath tempAbsPath'} <- TN.mkConf tempAbsBasePath'
 
@@ -66,7 +65,7 @@ prop_check_if_treasury_is_growing = integrationRetryWorkspace 0 "growing-treasur
        H.note_ "treasury is not growing"
        H.failure
   where
-    handler :: AnyNewEpochState -> SlotNo -> BlockNo -> StateT (Map EpochNo Integer) IO LedgerStateCondition
+    handler :: AnyNewEpochState -> SlotNo -> BlockNo -> StateT (Map EpochNo Integer) IO ConditionResult
     handler (AnyNewEpochState _ newEpochState) _slotNo _blockNo = do
       let (Coin coin) = newEpochState ^. L.nesEsL . L.esAccountStateL . L.asTreasuryL
           epochNo = newEpochState ^. L.nesELL

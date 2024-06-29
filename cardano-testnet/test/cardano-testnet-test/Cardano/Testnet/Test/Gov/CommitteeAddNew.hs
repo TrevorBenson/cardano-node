@@ -35,8 +35,8 @@ import           System.FilePath ((</>))
 
 import           Testnet.Components.Configuration
 import           Testnet.Components.Query
-import           Testnet.Components.TestWatchdog
 import           Testnet.Defaults
+import           Testnet.EpochStateProcessing (waitForGovActionVotes)
 import qualified Testnet.Process.Cli.DRep as DRep
 import           Testnet.Process.Cli.Keys
 import qualified Testnet.Process.Cli.SPO as SPO
@@ -49,7 +49,7 @@ import           Hedgehog
 import qualified Hedgehog.Extras as H
 
 hprop_constitutional_committee_add_new :: Property
-hprop_constitutional_committee_add_new = integrationWorkspace "constitutional-committee-add-new" $ \tempAbsBasePath' -> runWithDefaultWatchdog_ $ do
+hprop_constitutional_committee_add_new = integrationWorkspace "constitutional-committee-add-new" $ \tempAbsBasePath' -> H.runWithDefaultWatchdog_ $ do
   conf@Conf { tempAbsPath } <- mkConf tempAbsBasePath'
   let tempAbsPath' = unTmpAbsPath tempAbsPath
       tempBaseAbsPath = makeTmpBaseAbsPath tempAbsPath
@@ -72,7 +72,7 @@ hprop_constitutional_committee_add_new = integrationWorkspace "constitutional-co
       cEra = AnyCardanoEra era
       eraName = eraToString era
       fastTestnetOptions = cardanoDefaultTestnetOptions
-        { cardanoEpochLength = 100
+        { cardanoEpochLength = 200
         , cardanoNodeEra = cEra
         , cardanoNumDReps = nDrepVotes
         }
@@ -139,7 +139,6 @@ hprop_constitutional_committee_add_new = integrationWorkspace "constitutional-co
 
   EpochNo epochNo <- H.noteShowM $ getCurrentEpochNo epochStateView
   let ccExpiryEpoch = epochNo + 200
-      deadlineEpoch = EpochNo $ epochNo + 10
 
   _ <- execCli' execConfig $
     [ eraName, "governance", "action" , "update-committee"
@@ -177,13 +176,8 @@ hprop_constitutional_committee_add_new = integrationWorkspace "constitutional-co
   governanceActionTxId <- H.noteM $ retrieveTransactionId execConfig signedProposalTx
 
   governanceActionIx <-
-    H.nothingFailM .
-    H.leftFailM $
-      findCondition
-        (maybeExtractGovernanceActionIndex (fromString governanceActionTxId))
-        configurationFile
-        socketPath
-        deadlineEpoch
+    H.nothingFailM . watchEpochStateUpdate epochStateView (L.EpochInterval 1) $ \(anyNewEpochState, _, _) ->
+      pure $ maybeExtractGovernanceActionIndex (fromString governanceActionTxId) anyNewEpochState
 
   dRepVoteFiles <-
     DRep.generateVoteFiles
@@ -213,7 +207,7 @@ hprop_constitutional_committee_add_new = integrationWorkspace "constitutional-co
 
   submitTx execConfig cEra voteTxFp
 
-  _ <- waitForEpochs epochStateView (L.EpochInterval 1)
+  waitForGovActionVotes epochStateView (L.EpochInterval 1)
 
   govState <- getGovState epochStateView ceo
   govActionState <- H.headM $ govState ^. L.cgsProposalsL . L.pPropsL . to toList
@@ -227,8 +221,7 @@ hprop_constitutional_committee_add_new = integrationWorkspace "constitutional-co
   length (filter ((== L.VoteYes) . snd) gaSpoVotes) === 1
   length spoVotes === length gaSpoVotes
 
-  H.nothingFailM . H.leftFailM $
-    findCondition committeeIsPresent configurationFile socketPath deadlineEpoch
+  H.nothingFailM $ watchEpochStateUpdate epochStateView (L.EpochInterval 1) (return . committeeIsPresent)
 
   -- show proposed committe meembers
   H.noteShow_ ccCredentials
@@ -258,8 +251,8 @@ getCommitteeMembers epochStateView ceo = withFrozenCallStack $ do
   govState <- getGovState epochStateView ceo
   fmap (Map.keys . L.committeeMembers) . H.nothingFail $ strictMaybeToMaybe $ govState ^. L.cgsCommitteeL
 
-committeeIsPresent :: AnyNewEpochState -> Maybe ()
-committeeIsPresent (AnyNewEpochState sbe newEpochState) =
+committeeIsPresent :: (AnyNewEpochState, SlotNo, BlockNo) -> Maybe ()
+committeeIsPresent (AnyNewEpochState sbe newEpochState, _, _) =
   caseShelleyToBabbageOrConwayEraOnwards
     (const $ error "Constitutional committee does not exist pre-Conway era")
     (\_ -> do

@@ -15,7 +15,6 @@ import           Control.Monad.Trans.State.Strict
 import qualified System.Directory as IO
 import           System.FilePath ((</>))
 
-import           Testnet.Components.TestWatchdog
 import           Testnet.Property.Util (integrationWorkspace)
 import           Testnet.Types
 
@@ -25,7 +24,7 @@ import qualified Hedgehog.Extras.Stock.IO.Network.Sprocket as H
 import qualified Hedgehog.Extras.Test as H
 
 prop_foldEpochState :: H.Property
-prop_foldEpochState = integrationWorkspace "foldEpochState" $ \tempAbsBasePath' -> runWithDefaultWatchdog_ $ do
+prop_foldEpochState = integrationWorkspace "foldEpochState" $ \tempAbsBasePath' -> H.runWithDefaultWatchdog_ $ do
   conf <- TN.mkConf tempAbsBasePath'
 
   let tempAbsPath' = unTmpAbsPath $ tempAbsPath conf
@@ -44,7 +43,7 @@ prop_foldEpochState = integrationWorkspace "foldEpochState" $ \tempAbsBasePath' 
         => AnyNewEpochState
         -> SlotNo
         -> BlockNo
-        -> StateT [(SlotNo, BlockNo)] IO LedgerStateCondition
+        -> StateT [(SlotNo, BlockNo)] IO ConditionResult
       handler _ slotNo blockNo = do
         modify ((slotNo, blockNo):)
         s <- get
